@@ -1,4 +1,5 @@
 import csv
+import os
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -52,7 +53,7 @@ class TrussAnalyzerTests(unittest.TestCase):
         self.assertIn("COMPRESSION", table)
 
     def test_load_truss_from_csv(self):
-        with tempfile.NamedTemporaryFile("w", newline="", suffix=".csv") as f:
+        with tempfile.NamedTemporaryFile("w", newline="", suffix=".csv", delete=False) as f:
             writer = csv.writer(f)
             writer.writerow(["type", "node", "x", "y", "node1", "node2", "support", "fx", "fy"])
             writer.writerow(["node", "A", 0, 0, "", "", "", "", ""])
@@ -61,12 +62,26 @@ class TrussAnalyzerTests(unittest.TestCase):
             writer.writerow(["support", "A", "", "", "", "", "pin", "", ""])
             writer.writerow(["load", "B", "", "", "", "", "", 0, -5])
             f.flush()
-
+        try:
             truss = load_truss_from_file(f.name)
             self.assertEqual(truss["nodes"]["A"], (0.0, 0.0))
             self.assertEqual(truss["members"][0], ("A", "B"))
             self.assertEqual(truss["supports"]["A"], "pin")
             self.assertEqual(truss["loads"]["B"], (0.0, -5.0))
+        finally:
+            os.unlink(f.name)
+
+    def test_load_truss_from_csv_requires_type_column(self):
+        with tempfile.NamedTemporaryFile("w", newline="", suffix=".csv", delete=False) as f:
+            writer = csv.writer(f)
+            writer.writerow(["node", "x", "y"])
+            writer.writerow(["A", 0, 0])
+            f.flush()
+        try:
+            with self.assertRaises(ValueError):
+                load_truss_from_file(f.name)
+        finally:
+            os.unlink(f.name)
 
     def test_load_truss_interactive(self):
         answers = [

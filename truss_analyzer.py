@@ -10,12 +10,15 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 try:
     import numpy as np  # type: ignore
-except Exception:  # pragma: no cover - optional dependency
+except ImportError:  # pragma: no cover - optional dependency
     np = None
 
 
 Vector = Tuple[float, float]
 Member = Tuple[str, str]
+SOLVE_TOLERANCE = 1e-9
+EQUILIBRIUM_TOLERANCE = 1e-6
+GEOMETRIC_TOLERANCE = 1e-12
 
 
 @dataclass
@@ -119,7 +122,7 @@ def compute_reactions(truss_def: Dict) -> Dict[str, Vector]:
     x_pin, y_pin = truss.nodes[pin]
     x_roller, _ = truss.nodes[roller]
     lever = x_roller - x_pin
-    if abs(lever) < 1e-12:
+    if abs(lever) < GEOMETRIC_TOLERANCE:
         raise ValueError("Pin and roller cannot be vertically aligned for this solver.")
 
     sum_fx = sum(force[0] for force in truss.loads.values())
@@ -163,7 +166,6 @@ def solve_joints(truss_def: Dict, reactions: Optional[Dict[str, Vector]] = None)
         connected[m[0]].append(m)
         connected[m[1]].append(m)
 
-    tolerance = 1e-9
     progress = True
     while progress:
         progress = False
@@ -192,29 +194,31 @@ def solve_joints(truss_def: Dict, reactions: Optional[Dict[str, Vector]] = None)
 
             if len(unknowns) == 1:
                 member, c1x, c1y = unknowns[0]
-                value: Optional[float] = None
-                if abs(c1x) > tolerance:
-                    value = rhs_x / c1x
-                elif abs(c1y) > tolerance:
-                    value = rhs_y / c1y
-                if value is None:
+                if abs(c1x) > SOLVE_TOLERANCE:
+                    force_value = rhs_x / c1x
+                elif abs(c1y) > SOLVE_TOLERANCE:
+                    force_value = rhs_y / c1y
+                else:
                     continue
-                if abs(c1x * value - rhs_x) > 1e-6 or abs(c1y * value - rhs_y) > 1e-6:
+                if (
+                    abs(c1x * force_value - rhs_x) > EQUILIBRIUM_TOLERANCE
+                    or abs(c1y * force_value - rhs_y) > EQUILIBRIUM_TOLERANCE
+                ):
                     continue
-                member_forces[member] = value
+                member_forces[member] = force_value
                 progress = True
                 continue
 
             (m1, c1x, c1y), (m2, c2x, c2y) = unknowns
             det = c1x * c2y - c1y * c2x
-            if abs(det) < tolerance:
+            if abs(det) < SOLVE_TOLERANCE:
                 if np is None:
                     continue
                 matrix = np.array([[c1x, c2x], [c1y, c2y]], dtype=float)
                 vec = np.array([rhs_x, rhs_y], dtype=float)
                 try:
                     f1, f2 = np.linalg.solve(matrix, vec).tolist()
-                except Exception:
+                except np.linalg.LinAlgError:
                     continue
             else:
                 f1 = (rhs_x * c2y - rhs_y * c2x) / det
@@ -227,15 +231,16 @@ def solve_joints(truss_def: Dict, reactions: Optional[Dict[str, Vector]] = None)
     unresolved = [_member_name(a, b) for (a, b), f in member_forces.items() if f is None]
     if unresolved:
         raise ValueError(
-            "Unable to solve all member forces with Method of Joints. "
-            f"Unresolved members: {', '.join(unresolved)}"
+            f"Unable to solve all member forces with Method of Joints. Unresolved members: "
+            f"{', '.join(unresolved)}. This may indicate an unstable configuration, improper "
+            f"support constraints, or members not connected in a solvable sequence."
         )
 
     return {_member_name(a, b): float(member_forces[(a, b)]) for a, b in truss.members}
 
 
-def classify_force(force: float, tol: float = 1e-9) -> str:
-    if abs(force) <= tol:
+def classify_force(force: float, tolerance: float = SOLVE_TOLERANCE) -> str:
+    if abs(force) <= tolerance:
         return "ZERO FORCE"
     return "TENSION" if force > 0 else "COMPRESSION"
 
@@ -265,7 +270,7 @@ def draw_truss(
     """Draw truss with optional force coloring (blue=tension, red=compression)."""
     try:
         import matplotlib.pyplot as plt  # type: ignore
-    except Exception as exc:  # pragma: no cover - optional dependency
+    except ImportError as exc:  # pragma: no cover - optional dependency
         raise RuntimeError("matplotlib is required for visualization") from exc
 
     truss = _as_truss_data(truss_def)
@@ -277,8 +282,8 @@ def draw_truss(
         name = _member_name(a, b)
         color = "black"
         if member_forces is not None and name in member_forces:
-            f = member_forces[name]
-            color = "blue" if f > 1e-9 else "red" if f < -1e-9 else "gray"
+            nature = classify_force(member_forces[name], tolerance=SOLVE_TOLERANCE)
+            color = "blue" if nature == "TENSION" else "red" if nature == "COMPRESSION" else "gray"
         ax.plot([xa, xb], [ya, yb], color=color, linewidth=2)
         ax.text((xa + xb) / 2, (ya + yb) / 2, name, fontsize=9)
 
@@ -310,7 +315,9 @@ def _load_from_csv(path: str) -> Dict:
     with open(path, newline="", encoding="utf-8") as file:
         reader = csv.DictReader(file)
         if not reader.fieldnames or "type" not in {f.lower() for f in reader.fieldnames}:
-            raise ValueError("CSV must include a 'type' column.")
+            raise ValueError(
+                "CSV must include a 'type' column with values: node, member, support, or load."
+            )
 
         field_map = {f.lower(): f for f in reader.fieldnames}
         for row in reader:
@@ -471,7 +478,7 @@ def main() -> None:
     if analyzer.reactions:
         print("\nSupport Reactions:")
         for node, (rx, ry) in analyzer.reactions.items():
-            if abs(rx) > 1e-12 or abs(ry) > 1e-12:
+            if abs(rx) > GEOMETRIC_TOLERANCE or abs(ry) > GEOMETRIC_TOLERANCE:
                 print(f"  {node}: Rx={rx:.4f}, Ry={ry:.4f}")
     print()
     analyzer.display_results(unit=args.unit)
