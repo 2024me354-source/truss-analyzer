@@ -4,46 +4,58 @@ A comprehensive console-based 2D truss analyzer that solves trusses using the **
 
 ## Features
 
-- **Static Determinacy Check**: Validates if truss is solvable (m + r = 2j)
-- **Support Reaction Calculation**: Solves reactions using equilibrium equations (ΣFx=0, ΣFy=0, ΣM=0)
-- **Method of Joints Solution**: Determines axial forces in all members
-- **Force Classification**: Labels each member as TENSION, COMPRESSION, or ZERO FORCE
-- **Results Table**: Clean formatted output of member forces
-- **Visualization**: Matplotlib visualization with color-coded members (red=compression, blue=tension)
-- **File Input**: Load truss definitions from .txt or .csv files
+- Input from Python dictionary, interactive console prompts, or `.txt`/`.csv` files
+- Static determinacy check (`m + r = 2j`)
+- Support reaction calculation from global equilibrium (`ΣFx = 0`, `ΣFy = 0`, `ΣM = 0`)
+- Joint-by-joint solution for member forces
+- Member classification as **TENSION**, **COMPRESSION**, or **ZERO FORCE**
+- Optional matplotlib drawing with blue tension and red compression members
+- Graceful error handling for unstable/indeterminate trusses and solve failures
 
-## Coming Soon
+## Quick Start
 
-- Interactive user input
-- File loading support
-- Advanced visualization features
+Run the built-in Warren truss sample:
 
-## Usage
+```bash
+python truss_analyzer.py
+```
+
+Run with interactive input:
+
+```bash
+python truss_analyzer.py --interactive
+```
+
+Run from file input:
+
+```bash
+python truss_analyzer.py --file /path/to/truss.txt
+python truss_analyzer.py --file /path/to/truss.csv
+```
+
+Optional visualization:
+
+```bash
+python truss_analyzer.py --plot
+```
+
+## Python API
 
 ```python
 from truss_analyzer import TrussAnalyzer
 
-# Define truss (Warren truss example)
 truss_def = {
-    'nodes': {
-        'A': (0, 0),
-        'B': (2, 0),
-        'C': (4, 0),
-        'D': (2, 2)
+    "nodes": {
+        "A": (0, 0),
+        "B": (2, 0),
+        "C": (4, 0),
+        "D": (2, 2),
     },
-    'members': [
-        ('A', 'B'), ('B', 'C'), ('A', 'D'), ('B', 'D'), ('C', 'D')
-    ],
-    'supports': {
-        'A': 'pin',
-        'C': 'roller'
-    },
-    'loads': {
-        'D': (0, -10)  # 10 kN downward
-    }
+    "members": [("A", "B"), ("B", "C"), ("A", "D"), ("B", "D"), ("C", "D")],
+    "supports": {"A": "pin", "C": "roller"},
+    "loads": {"D": (0, -10)},
 }
 
-# Solve truss
 analyzer = TrussAnalyzer(truss_def)
 analyzer.solve()
 analyzer.display_results()
@@ -54,6 +66,8 @@ analyzer.display_results()
 ```bash
 pip install numpy matplotlib
 ```
+
+`numpy` and `matplotlib` are optional but recommended.
 
 ## License
 
